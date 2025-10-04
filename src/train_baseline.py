@@ -7,9 +7,10 @@ import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.phoneme_dataset import PhonemeDataset, collate_phoneme_batch, get_session_mapping
-from src.rnn_model import GRUDecoder
-from src.utils import compute_normalization
+from phoneme_dataset import PhonemeDataset, collate_phoneme_batch, get_session_mapping
+from rnn_model import GRUDecoder
+from model import ConformerCTCDecoder
+from utils import compute_normalization
 
 
 def set_seed(s=42):
@@ -17,6 +18,14 @@ def set_seed(s=42):
     np.random.seed(s)
     torch.manual_seed(s)
     torch.cuda.manual_seed_all(s)
+
+    # Enable cuDNN optimizations
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
+
+    # Enable TF32 on A100 for faster matmuls
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 
 def compute_phoneme_error_rate(logits, targets, target_lens, blank_id=0):
@@ -30,17 +39,11 @@ def compute_phoneme_error_rate(logits, targets, target_lens, blank_id=0):
     total_phonemes = 0
 
     for b in range(preds.shape[0]):
-        # CTC collapse
-        prev = None
-        pred_ids = []
-        for t in range(preds.shape[1]):
-            p = int(preds[b, t])
-            if p == blank_id:
-                prev = p
-                continue
-            if prev != p:
-                pred_ids.append(p)
-            prev = p
+        # CTC collapse using torch.unique_consecutive (matches reference implementation)
+        decoded_seq = torch.from_numpy(preds[b]).long()
+        decoded_seq = torch.unique_consecutive(decoded_seq, dim=0)
+        decoded_seq = decoded_seq[decoded_seq != blank_id]
+        pred_ids = decoded_seq.cpu().numpy().tolist()
 
         # Get reference
         target_len = int(target_lens[b])
@@ -136,7 +139,9 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
         shuffle=True,
         num_workers=dataset_config.get('num_dataloader_workers', 4),
         collate_fn=collate_phoneme_batch,
-        pin_memory=(device == 'cuda')
+        pin_memory=(device == 'cuda'),
+        persistent_workers=True,
+        prefetch_factor=8
     )
 
     val_dl = DataLoader(
@@ -147,26 +152,43 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
         collate_fn=collate_phoneme_batch
     )
 
-    # Create model
-    print("Creating GRU model...")
-    model = GRUDecoder(
-        neural_dim=model_config['n_input_features'],
-        n_units=model_config['n_units'],
-        n_days=n_days,
-        n_classes=n_classes,
-        rnn_dropout=model_config['rnn_dropout'],
-        input_dropout=model_config['input_network']['input_layer_dropout'],
-        n_layers=model_config['n_layers'],
-        patch_size=model_config['patch_size'],
-        patch_stride=model_config['patch_stride']
-    ).to(device)
+    # Create model - GRU or Conformer based on config
+    model_type = model_config.get('type', 'gru').lower()
+
+    if model_type == 'conformer':
+        print("Creating Conformer model...")
+        model = ConformerCTCDecoder(
+            neural_dim=model_config['n_input_features'],
+            n_units=model_config['d_model'],
+            n_days=n_days,
+            n_classes=n_classes,
+            rnn_dropout=model_config.get('dropout', 0.1),
+            input_dropout=model_config.get('dropout', 0.1),
+            n_layers=model_config['num_blocks'],
+            patch_size=model_config.get('patch_size', 14),
+            patch_stride=model_config.get('patch_stride', 4),
+            nhead=model_config.get('nhead', 4)
+        ).to(device)
+    else:  # default to GRU
+        print("Creating GRU model...")
+        model = GRUDecoder(
+            neural_dim=model_config['n_input_features'],
+            n_units=model_config['n_units'],
+            n_days=n_days,
+            n_classes=n_classes,
+            rnn_dropout=model_config['rnn_dropout'],
+            input_dropout=model_config['input_network']['input_layer_dropout'],
+            n_layers=model_config['n_layers'],
+            patch_size=model_config['patch_size'],
+            patch_stride=model_config['patch_stride']
+        ).to(device)
 
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
 
     # Loss and optimizer
     ctc_loss = nn.CTCLoss(blank=0, zero_infinity=True)
 
-    # Separate optimizer for day layers vs main model
+    # Separate optimizer for day layers vs main model (BEFORE compiling)
     day_params = list(model.day_weights.parameters()) + list(model.day_biases.parameters())
     main_params = [p for n, p in model.named_parameters()
                    if not n.startswith('day_weights') and not n.startswith('day_biases')]
@@ -175,6 +197,11 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
         {'params': main_params, 'lr': config['lr_max'], 'weight_decay': config['weight_decay']},
         {'params': day_params, 'lr': config['lr_max_day'], 'weight_decay': config['weight_decay_day']}
     ], betas=(config['beta0'], config['beta1']), eps=config['epsilon'])
+
+    # Skip torch.compile - doesn't help RNNs much and adds overhead
+    # if hasattr(torch, 'compile'):
+    #     print("Compiling model with torch.compile...")
+    #     model = torch.compile(model, mode='max-autotune')
 
     # Learning rate scheduler
     total_batches = num_batches or config['num_training_batches']
@@ -235,6 +262,7 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
 
         x = x.to(device)
         day_idxs = day_idxs.to(device)
+        x_lens = x_lens.to(device)
         y_lens = y_lens.to(device)
 
         # Flatten targets for CTC loss
@@ -246,13 +274,16 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
         # Forward
         autocast_context = torch.amp.autocast('cuda', enabled=use_amp) if hasattr(torch.amp, 'autocast') else torch.cuda.amp.autocast(enabled=use_amp)
         with autocast_context:
-            logits = model(x, day_idxs)  # (B, T', n_classes)
-
-            # Compute output lengths after patching
-            if model.patch_size > 0:
-                out_lens = ((x_lens - model.patch_size) // model.patch_stride + 1).clamp(min=1)
+            # Pass x_lens for Conformer, GRU ignores it
+            if isinstance(model, ConformerCTCDecoder):
+                logits, out_lens = model(x, day_idxs, x_lens)
             else:
-                out_lens = x_lens
+                logits = model(x, day_idxs)  # GRU
+                # Compute output lengths after patching for GRU
+                if model.patch_size > 0:
+                    out_lens = ((x_lens - model.patch_size) // model.patch_stride + 1).clamp(min=1)
+                else:
+                    out_lens = x_lens
 
             # CTC loss expects (T, B, C)
             log_probs = logits.log_softmax(dim=-1).transpose(0, 1)
@@ -287,9 +318,13 @@ def train_baseline_gru(config_path='configs/rnn_args.yaml', num_batches=None):
             with torch.no_grad():
                 for x, y, x_lens, y_lens, day_idxs, _, _ in tqdm(val_dl, desc="Val", leave=False):
                     x = x.to(device)
+                    x_lens = x_lens.to(device)
                     day_idxs = day_idxs.to(device)
 
-                    logits = model(x, day_idxs)
+                    if isinstance(model, ConformerCTCDecoder):
+                        logits, _ = model(x, day_idxs, x_lens)
+                    else:
+                        logits = model(x, day_idxs)
                     per = compute_phoneme_error_rate(logits, y, y_lens)
                     val_pers.append(per)
 

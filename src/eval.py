@@ -1,9 +1,9 @@
 import os, glob, json, numpy as np, torch
 from torch.utils.data import DataLoader
-from src.data import NeuralTextDataset, collate_batch
-from src.tokenization import SimpleSubwordTokenizer
-from src.model import ConformerRNNT
-from src.utils import compute_wer
+from data import NeuralTextDataset, collate_batch
+from tokenization import SimpleSubwordTokenizer
+from model import ConformerRNNT
+from utils import compute_wer
 
 def session_cv(data_root='data', ckpt='runs/checkpoints/conformer_ctc_ema.pt', batch_size=8, num_workers=4, device=None):
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')

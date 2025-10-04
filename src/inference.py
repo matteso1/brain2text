@@ -3,10 +3,10 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
-from src.data import NeuralTextDataset, collate_batch
-from src.tokenization import SimpleSubwordTokenizer
-from src.model import ConformerRNNT
-from src.utils import normalize_text_for_wer
+from data import NeuralTextDataset, collate_batch
+from tokenization import SimpleSubwordTokenizer
+from model import ConformerRNNT
+from utils import normalize_text_for_wer
 
 
 def greedy_ctc_decode(logits_BTV, tokenizer):

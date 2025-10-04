@@ -1,13 +1,19 @@
 import os, math, random, numpy as np, torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import DataLoader
-from src.data import NeuralTextDataset, collate_batch
-from src.tokenization import SimpleSubwordTokenizer
-from src.utils import compute_normalization, compute_wer
-from src.model import ConformerRNNT
+from phoneme_dataset import PhonemeDataset, collate_phoneme_batch, get_session_mapping
+from tokenization import SimpleSubwordTokenizer
+from utils import compute_normalization, compute_wer
+from model import ConformerRNNT
 from tqdm import tqdm
 
 def set_seed(s=42):
     random.seed(s); np.random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
+    # Enable cuDNN optimizations
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
+    # Enable TF32 on A100 for faster matmuls
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 def build_tokenizer(data_root, split='train', vocab_size=2000, max_texts=50000):
     """Build tokenizer from training texts"""
@@ -92,12 +98,15 @@ def train_conformer_ctc(data_root='data',
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
 
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
-                          collate_fn=collate_batch, pin_memory=True)
+                          collate_fn=collate_batch, pin_memory=True,
+                          persistent_workers=True if num_workers > 0 else False,
+                          prefetch_factor=4 if num_workers > 0 else None)
     val_dl   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                           collate_fn=collate_batch, pin_memory=True)
 
     model = ConformerRNNT(in_dim=512, d_model=d_model, num_blocks=num_blocks, nhead=nhead, p=p,
                           vocab_size=len(tokenizer.vocab)).to(device)
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     ctc_loss = nn.CTCLoss(blank=0, zero_infinity=True)
     opt = optim.AdamW(model.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-8, weight_decay=0.01)
 
@@ -183,8 +192,10 @@ def train_conformer_ctc(data_root='data',
 
 if __name__ == "__main__":
     train_conformer_ctc(
-        d_model=384,  # Bigger model or 512
-        num_blocks=16 ,  # More layers try 24
-        batch_size=16,  # Larger batches or 32
+        d_model=256,  # Smaller to fit memory
+        num_blocks=12,  # Fewer blocks
+        batch_size=192,  # Max out GPU - only using 2%!
         epochs=10,  # More epochs
+        num_workers=12,  # Match system recommendation
+        lr=3e-4,  # Good starting LR
     )

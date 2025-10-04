@@ -5,7 +5,7 @@ Loads neural data + phoneme targets (seq_class_ids) with augmentation
 import os, glob, h5py, numpy as np, torch
 from torch.utils.data import Dataset
 import yaml
-from src.data_augmentations import gauss_smooth
+from data_augmentations import gauss_smooth
 
 
 # Load session mapping from config
