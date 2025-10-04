@@ -7,10 +7,10 @@ import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from phoneme_dataset import PhonemeDataset, collate_phoneme_batch, get_session_mapping
-from rnn_model import GRUDecoder
-from model import ConformerCTCDecoder
-from utils import compute_normalization
+from src.phoneme_dataset import PhonemeDataset, collate_phoneme_batch, get_session_mapping
+from src.rnn_model import GRUDecoder
+from src.model import ConformerCTCDecoder
+from src.utils import compute_normalization
 
 
 def set_seed(s=42):

@@ -143,3 +143,109 @@ class ConformerRNNT(nn.Module):
         joint_logits = self.joint(enc, pred)  # (B,T,U,V)
         ctc_logits = self.ctc_head(enc)       # (B,T,V)
         return joint_logits, ctc_logits, enc_lens
+
+class ConformerCTCDecoder(nn.Module):
+    """
+    Conformer encoder with CTC head - matches GRUDecoder interface for baseline training.
+    Replaces GRU with Conformer while keeping day-specific layers and patching logic.
+    """
+    def __init__(self, neural_dim, n_units, n_days, n_classes,
+                 rnn_dropout=0.1, input_dropout=0.1, n_layers=12,
+                 patch_size=14, patch_stride=4, nhead=4):
+        super().__init__()
+        self.neural_dim = neural_dim
+        self.n_units = n_units  # This becomes d_model for conformer
+        self.n_classes = n_classes
+        self.n_layers = n_layers  # num_blocks
+        self.n_days = n_days
+        self.patch_size = patch_size
+        self.patch_stride = patch_stride
+
+        # Day-specific input layers (same as GRU)
+        self.day_layer_activation = nn.Softsign()
+        self.day_weights = nn.ParameterList([
+            nn.Parameter(torch.eye(neural_dim)) for _ in range(n_days)
+        ])
+        self.day_biases = nn.ParameterList([
+            nn.Parameter(torch.zeros(neural_dim)) for _ in range(n_days)
+        ])
+        self.input_dropout_layer = nn.Dropout(input_dropout)
+
+        # Patching layer (if enabled)
+        if patch_size > 0:
+            in_dim_after_patch = neural_dim * patch_size
+        else:
+            in_dim_after_patch = neural_dim
+
+        # Conformer encoder
+        self.encoder = ConformerEncoder(
+            in_dim=in_dim_after_patch,
+            d_model=n_units,  # Use n_units as d_model
+            num_blocks=n_layers,
+            nhead=nhead,
+            p=rnn_dropout,
+            subsample=1  # No subsampling, we handle it with patching
+        )
+
+        # CTC output head
+        self.ctc_head = nn.Linear(n_units, n_classes)
+
+    def forward(self, x, day_idx, lens):
+        """
+        x: (B, T, neural_dim)
+        day_idx: (B,) - which day for each sample
+        lens: (B,) - sequence lengths
+        """
+        B, T, D = x.shape
+
+        # Apply day-specific layers
+        out = torch.zeros_like(x)
+        for b in range(B):
+            d = day_idx[b]
+            out[b] = self.day_layer_activation(
+                torch.matmul(x[b], self.day_weights[d]) + self.day_biases[d]
+            )
+        out = self.input_dropout_layer(out)
+
+        # Apply patching if enabled
+        if self.patch_size > 0:
+            patches = []
+            patch_lens = []
+            for b in range(B):
+                seq_len = lens[b]
+                seq = out[b, :seq_len]  # (T, D)
+
+                # Create patches
+                num_patches = (seq_len - self.patch_size) // self.patch_stride + 1
+                batch_patches = []
+                for i in range(num_patches):
+                    start = i * self.patch_stride
+                    patch = seq[start:start+self.patch_size].flatten()  # (patch_size * D)
+                    batch_patches.append(patch)
+
+                if batch_patches:
+                    patches.append(torch.stack(batch_patches))  # (num_patches, patch_size*D)
+                    patch_lens.append(len(batch_patches))
+                else:
+                    # Fallback if no patches
+                    patches.append(seq[:1].repeat(1, self.patch_size).flatten().unsqueeze(0))
+                    patch_lens.append(1)
+
+            # Pad patches to same length
+            max_patches = max(patch_lens)
+            padded = []
+            for p in patches:
+                if p.size(0) < max_patches:
+                    pad = torch.zeros(max_patches - p.size(0), p.size(1), device=p.device)
+                    p = torch.cat([p, pad], dim=0)
+                padded.append(p)
+            out = torch.stack(padded)  # (B, max_patches, patch_size*D)
+            lens = torch.tensor(patch_lens, device=x.device)
+
+        # Conformer encoder
+        enc, enc_lens = self.encoder(out, lens)
+
+        # CTC head
+        logits = self.ctc_head(enc)  # (B, T', n_classes)
+
+        return logits, enc_lens
