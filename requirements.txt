@@ -1,0 +1,23 @@
+# Core dependencies
+pandas
+numpy
+h5py
+torch
+torchaudio
+scipy
+
+# Tokenization
+sentencepiece
+
+# Metrics
+jiwer
+
+# Visualization
+matplotlib
+seaborn
+
+# Config management
+pyyaml
+
+# Utilities
+tqdm

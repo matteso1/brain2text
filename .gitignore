@@ -1,0 +1,90 @@
+# Data files (DO NOT UPLOAD - too large)
+data/
+*.hdf5
+*.h5
+
+# Trained models and checkpoints
+trained_models/
+runs/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Tarballs (local packaging only)
+*.tar.gz
+*.tar
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
+*.out
+*.err
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# HTCondor output files (generated on CHTC)
+train_*.log
+train_*.out
+train_*.err
+results.tar.gz
+
+# Large reference materials (exclude from repo - too big)
+nejm_brain_to_text_baseline_*/

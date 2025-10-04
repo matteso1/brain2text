@@ -1,0 +1,48 @@
+# train.sub
+# HTCondor submit file for brain-to-text training
+# CHTC GPU job for PyTorch neural decoder
+
+# Use Docker container with PyTorch + CUDA
+universe = docker
+docker_image = pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+executable = train.sh
+arguments = $(Process)
+
+# Transfer files
+# IMPORTANT: Data (24GB) must be in /staging/nomatteson/ before submitting
+# Use osdf:/// protocol for files 1-30GB in staging
+transfer_input_files = brain2text_code.tar.gz, osdf:///chtc/staging/nomatteson/brain2text_data.tar.gz
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+# Output files - will be transferred back to /home on completion
+log = train_$(Cluster)_$(Process).log
+error = train_$(Cluster)_$(Process).err
+output = train_$(Cluster)_$(Process).out
+transfer_output_files = results.tar.gz
+
+# Resource requests
+# GPU: 1x GPU with >=16GB memory (matches A100 40GB/80GB or V100 16GB)
+# CPU: 4 cores for parallel data loading
+# RAM: 32GB (model ~5GB + data batches ~10GB + overhead)
+# Disk: 60GB (24GB data + 20GB checkpoints + 10GB overhead + extracted files)
+request_gpus = 1
+request_cpus = 4
+request_memory = 32GB
+request_disk = 60GB
+
+# GPU and staging requirements
+# Target.HasCHTCStaging: Required for osdf:/// data access
+# GPUDeviceName: Match A100 (preferred) or V100
+# Require CUDA 11.0+ for PyTorch 2.x compatibility
+Requirements = (Target.HasCHTCStaging == true) && (CUDADriverVersion >= 11.0) && (CUDAGlobalMemoryMb >= 15000)
++WantGPULab = true
++GPUJobLength = "medium"
+
+# Email notifications when job completes
+notify_user = nomatteson@wisc.edu
+notification = Complete
+
+# Submit 1 training job
+queue 1
