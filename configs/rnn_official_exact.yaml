@@ -1,4 +1,6 @@
-# Faster training config - reduced augmentation
+# EXACT match to official NEJM implementation
+# This should reproduce their stable training
+
 model:
   n_input_features: 512
   n_units: 768
@@ -19,22 +21,23 @@ gpu_number: '0'
 mode: train
 use_amp: true
 
-output_dir: runs/baseline_training_fast
-checkpoint_dir: runs/baseline_training_fast/checkpoint
+output_dir: trained_models/official_exact
+checkpoint_dir: trained_models/official_exact/checkpoint
 init_from_checkpoint: false
+init_checkpoint_path: None
 save_best_checkpoint: true
 save_all_val_steps: false
-save_final_model: false
+save_final_model: true
 save_val_metrics: true
 early_stopping: false
 early_stopping_val_steps: 20
 
 num_training_batches: 120000
 lr_scheduler_type: cosine
-lr_max: 0.005
+lr_max: 0.005  # OFFICIAL: 0.005 (NOT 0.002!)
 lr_min: 0.0001
 lr_decay_steps: 120000
-lr_warmup_steps: 1000
+lr_warmup_steps: 1000  # OFFICIAL: 1000 (NOT 2000!)
 lr_max_day: 0.005
 lr_min_day: 0.0001
 lr_decay_steps_day: 120000
@@ -42,14 +45,19 @@ lr_warmup_steps_day: 1000
 
 beta0: 0.9
 beta1: 0.999
-epsilon: 0.1
+epsilon: 0.1  # OFFICIAL: 0.1
 weight_decay: 0.001
-weight_decay_day: 0
+weight_decay_day: 0.0
 seed: 10
-grad_norm_clip_value: 10
+grad_norm_clip_value: 10.0
+use_fused_adamw: true  # Official uses fused=True
+grad_norm_threshold: 40.0
+skip_on_explosion: false
+extreme_explosion_factor: 5.0
 
 batches_per_train_log: 200
 batches_per_val_step: 2000
+
 batches_per_save: 0
 log_individual_day_val_PER: true
 log_val_skip_logs: false
@@ -58,23 +66,24 @@ save_val_data: false
 
 dataset:
   data_transforms:
-    white_noise_std: 1.0
-    constant_offset_std: 0.2
+    # CRITICAL: Official uses MUCH stronger augmentation than we were using
+    white_noise_std: 1.0  # OFFICIAL: 1.0 (NOT 0.25!)
+    constant_offset_std: 0.2  # OFFICIAL: 0.2 (NOT 0.05!)
     random_walk_std: 0.0
     random_walk_axis: -1
     static_gain_std: 0.0
     random_cut: 3
-    smooth_kernel_size: 50  # REDUCED from 100
+    smooth_kernel_size: 100
     smooth_data: true
-    smooth_kernel_std: 1.5  # REDUCED from 2
+    smooth_kernel_std: 2
 
   neural_dim: 512
-  batch_size: 64
+  batch_size: 64  # OFFICIAL: 64 (we had 48 for safety, but try official)
   n_classes: 41
   max_seq_elements: 500
   days_per_batch: 4
   seed: 1
-  num_dataloader_workers: 8  # INCREASED from 4
+  num_dataloader_workers: 4
   loader_shuffle: false
   must_include_days: null
   test_percentage: 0.1
@@ -82,6 +91,8 @@ dataset:
 
   dataset_dir: ../data/hdf5_data_final
   bad_trials_dict: null
+
+  # All 45 sessions
   sessions:
   - t15.2023.08.11
   - t15.2023.08.13
@@ -128,6 +139,7 @@ dataset:
   - t15.2025.03.16
   - t15.2025.03.30
   - t15.2025.04.13
+
   dataset_probability_val:
   - 0
   - 1
@@ -174,3 +186,4 @@ dataset:
   - 1
   - 1
   - 1
+

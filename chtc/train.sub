@@ -3,8 +3,9 @@
 # CHTC GPU job for PyTorch neural decoder
 
 # Use Docker container with PyTorch + CUDA
-universe = docker
-docker_image = pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+# CHTC recommended syntax for better output handling
+universe = container
+container_image = docker://pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 executable = train.sh
 arguments = $(Process)
@@ -14,6 +15,8 @@ arguments = $(Process)
 # Use osdf:/// protocol for files 1-30GB in staging
 transfer_input_files = brain2text_code.tar.gz, osdf:///chtc/staging/nomatteson/brain2text_data.tar.gz
 should_transfer_files = YES
+
+
 when_to_transfer_output = ON_EXIT
 
 # Output files - will be transferred back to /home on completion
@@ -21,6 +24,10 @@ log = train_$(Cluster)_$(Process).log
 error = train_$(Cluster)_$(Process).err
 output = train_$(Cluster)_$(Process).out
 transfer_output_files = results.tar.gz
+
+# Enable streaming output (helps with real-time logging)
+stream_output = True
+stream_error = True
 
 # Resource requests
 # GPU: 1x GPU with >=16GB memory (matches A100 40GB/80GB or V100 16GB)

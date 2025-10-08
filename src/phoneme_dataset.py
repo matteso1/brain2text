@@ -84,6 +84,15 @@ class PhonemeDataset(Dataset):
         # Apply augmentations if training
         if self.augment and self.split == 'train':
             x = self._apply_augmentations(x)
+        else:
+            # Still apply smoothing to validation (match official implementation!)
+            smooth_data = self.aug_config.get('smooth_data', False) if self.aug_config else False
+            if smooth_data:
+                smooth_kernel_std = self.aug_config.get('smooth_kernel_std', 2)
+                smooth_kernel_size = self.aug_config.get('smooth_kernel_size', 100)
+                x_tensor = torch.from_numpy(x).unsqueeze(0)
+                x_tensor = gauss_smooth(x_tensor, 'cpu', smooth_kernel_std, smooth_kernel_size)
+                x = x_tensor.squeeze(0).numpy()
 
         # Normalize
         if self.mean is not None and self.std is not None:
@@ -100,14 +109,26 @@ class PhonemeDataset(Dataset):
         return torch.from_numpy(x), torch.from_numpy(y), day_idx, sess_name, tk
 
     def _apply_augmentations(self, x):
-        """Apply data augmentations to neural data"""
+        """Apply data augmentations to neural data - MATCH OFFICIAL ORDER"""
         # Random cut - remove random frames from beginning
         random_cut = self.aug_config.get('random_cut', 0)
         if random_cut > 0:
             cut_amt = np.random.randint(0, random_cut + 1)
             x = x[cut_amt:]
 
-        # Gaussian smoothing (applied before noise)
+        # White noise BEFORE smoothing (official order!)
+        white_noise_std = self.aug_config.get('white_noise_std', 0.0)
+        if white_noise_std > 0:
+            noise = np.random.randn(*x.shape).astype(np.float32) * white_noise_std
+            x = x + noise
+
+        # Constant offset BEFORE smoothing (official order!)
+        constant_offset_std = self.aug_config.get('constant_offset_std', 0.0)
+        if constant_offset_std > 0:
+            offset = np.random.randn(1, x.shape[1]).astype(np.float32) * constant_offset_std
+            x = x + offset
+
+        # Gaussian smoothing AFTER noise (official order!) - reduces effective noise magnitude
         smooth_data = self.aug_config.get('smooth_data', False)
         if smooth_data:
             smooth_kernel_std = self.aug_config.get('smooth_kernel_std', 2)
@@ -117,18 +138,6 @@ class PhonemeDataset(Dataset):
             x_tensor = torch.from_numpy(x).unsqueeze(0)  # (1, T, D)
             x_tensor = gauss_smooth(x_tensor, 'cpu', smooth_kernel_std, smooth_kernel_size)
             x = x_tensor.squeeze(0).numpy()
-
-        # White noise
-        white_noise_std = self.aug_config.get('white_noise_std', 0.0)
-        if white_noise_std > 0:
-            noise = np.random.randn(*x.shape).astype(np.float32) * white_noise_std
-            x = x + noise
-
-        # Constant offset
-        constant_offset_std = self.aug_config.get('constant_offset_std', 0.0)
-        if constant_offset_std > 0:
-            offset = np.random.randn(1, x.shape[1]).astype(np.float32) * constant_offset_std
-            x = x + offset
 
         return x
 
@@ -146,13 +155,13 @@ def collate_phoneme_batch(batch):
     D = xs[0].shape[1]
 
     x_pad = torch.zeros(B, T_max, D, dtype=torch.float32)
-    x_lens = torch.tensor([x.shape[0] for x in xs], dtype=torch.int32)
+    x_lens = torch.tensor([x.shape[0] for x in xs], dtype=torch.long)
 
     for i, x in enumerate(xs):
         x_pad[i, :x.shape[0]] = x
 
     # Pad phoneme targets
-    y_lens = torch.tensor([y.shape[0] for y in ys], dtype=torch.int32)
+    y_lens = torch.tensor([y.shape[0] for y in ys], dtype=torch.long)
     y_max = max(int(l) for l in y_lens)
     y_pad = torch.zeros(B, y_max, dtype=torch.long)
 

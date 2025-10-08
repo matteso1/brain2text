@@ -116,7 +116,7 @@ class GRUDecoder(nn.Module):
             x_unfold = x_unfold.permute(0, 2, 3, 1)  # [batches, num_patches, patch_size, feature_dim]
 
             # Flatten last two dimensions (patch_size and features)
-            x = x_unfold.reshape(x.size(0), x_unfold.size(1), -1) 
+            x = x_unfold.reshape(x_unfold.size(0), x_unfold.size(1), -1)
         
         # Determine initial hidden states
         if states is None:

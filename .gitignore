@@ -57,6 +57,9 @@ env/
 .vscode/
 *.code-workspace
 
+# Claude
+.claude/
+
 # Mac
 .DS_Store
 .AppleDouble
@@ -88,3 +91,6 @@ results.tar.gz
 
 # Large reference materials (exclude from repo - too big)
 nejm_brain_to_text_baseline_*/
+
+# Reference code, do not commit
+nejm_repo/
