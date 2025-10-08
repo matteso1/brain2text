@@ -1,12 +1,12 @@
 # Brain-to-Text: Neural Navigators Kaggle Competition
 
-**Project Status (October 2025): ✅ STABLE BASELINE ACHIEVED**
+**Project Status (October 8th 2025):  STABLE BASELINE ACHIEVED**
 
 This repository contains the code for the Neural Navigators team's entry into the **Brain-to-Text '25 Kaggle Competition**. Our goal is to build a state-of-the-art neural decoder that translates brain signals into text, with the ultimate aim of restoring communication to individuals with paralysis.
 
 ---
 
-## 🚀 Breakthrough Achieved: We Have a Stable Model!
+##  Breakthrough Achieved: We Have a Stable Model!
 
 After a challenging debugging phase, we have successfully implemented and stabilized the official NEJM baseline model. Our new training script, `src/train_repro.py`, is a clean-room reproduction of the official logic and has proven to be **rock solid**.
 
@@ -19,7 +19,7 @@ This demonstrates a fast, stable learning curve with **zero gradient explosions 
 
 ---
 
-## 🧠 How It Works: The GRU Baseline
+## How It Works: The GRU Baseline
 
 Our current approach is a faithful implementation of the successful Stanford baseline.
 
@@ -49,7 +49,7 @@ The solution was a **principled reset**. We learned that a series of small, inte
 
 ---
 
-## 🏆 Competition Game Plan: Path to the Top 3
+##  Competition Game Plan: Path to the Top 3
 
 Now that we have a stable baseline, we can execute our plan to climb the leaderboard. This plan is informed by the [Brain-to-Text Benchmark '24 paper](https://arxiv.org/html/2412.17227v1), which summarizes the winning strategies.
 
@@ -72,7 +72,7 @@ Now that we have a stable baseline, we can execute our plan to climb the leaderb
 
 ---
 
-## 💻 How to Use This Repository
+## How to Use This Repository
 
 ### 1. Setup Environment
 ```powershell
@@ -109,7 +109,6 @@ python src/train_repro.py --config configs/rnn_official_exact.yaml
 -   `configs/rnn_official_exact.yaml`: **The official, working hyperparameter configuration.**
 -   `src/rnn_model.py`: The GRU model architecture.
 -   `src/phoneme_dataset.py`: The data loader for HDF5 files.
--   `nejm_repo/`: A clone of the original NEJM implementation for reference.
 -   `data/`: (Not in git) This is where the HDF5 data files should be located.
 
-This is our moment. Let's get this done.
+
