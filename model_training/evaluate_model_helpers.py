@@ -86,8 +86,9 @@ def rearrange_speech_logits_pt(logits):
 # smooths data and puts it through the model.
 def runSingleDecodingStep(x, input_layer, model, model_args, device):
 
-    # Use autocast for efficiency
-    with torch.autocast(device_type = "cuda", enabled = model_args['use_amp'], dtype = torch.bfloat16):
+    # Use autocast for efficiency (disabled for CPU)
+    device_type = "cuda" if torch.cuda.is_available() else "cpu"
+    with torch.autocast(device_type = device_type, enabled = model_args['use_amp'] and torch.cuda.is_available(), dtype = torch.bfloat16):
 
         x = gauss_smooth(
             inputs = x, 
@@ -98,9 +99,17 @@ def runSingleDecodingStep(x, input_layer, model, model_args, device):
         )
 
         with torch.no_grad():
+            # Convert input to model's expected dtype
+            target_dtype = torch.float32
+            if hasattr(model, 'input_network') and hasattr(model.input_network, 'weight'):
+                target_dtype = model.input_network.weight.dtype
+
+            # Convert input to target dtype
+            x = x.to(dtype=target_dtype, device=device)
+
             logits, _ = model(
                 x = x,
-                day_idx = torch.tensor([input_layer], device=device),
+                day_idx = torch.tensor([input_layer], device=device, dtype=torch.long),
                 states = None, # no initial states
                 return_state = True,
             )
