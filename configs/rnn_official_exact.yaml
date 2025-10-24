@@ -78,12 +78,12 @@ dataset:
     smooth_kernel_std: 2
 
   neural_dim: 512
-  batch_size: 64  # OFFICIAL: 64 (we had 48 for safety, but try official)
+  batch_size: 48  # TUNED FOR 16GB VRAM: Reduced from 64 to 48 for stable overnight training.
   n_classes: 41
   max_seq_elements: 500
   days_per_batch: 4
   seed: 1
-  num_dataloader_workers: 4
+  num_dataloader_workers: 4 # Default for local training
   loader_shuffle: false
   must_include_days: null
   test_percentage: 0.1

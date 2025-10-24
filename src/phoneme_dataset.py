@@ -78,35 +78,37 @@ class PhonemeDataset(Dataset):
 
         with h5py.File(fp, 'r') as f:
             g = f[tk]
-            x = np.array(g['input_features'], dtype=np.float32)  # (T, 512)
-            y = np.array(g['seq_class_ids'], dtype=np.int64)     # (max_seq_len,) phoneme IDs
+            x_np = np.array(g['input_features'], dtype=np.float32)  # (T, 512)
+            y_np = np.array(g['seq_class_ids'], dtype=np.int64)     # (max_seq_len,) phoneme IDs
+            # Load the ground truth sentence text
+            sentence = g.attrs.get('sentence_label', '')
 
-        # Apply augmentations if training
+        # Apply augmentations if training (NOTE: augmentations are now done on GPU in train_repro)
         if self.augment and self.split == 'train':
-            x = self._apply_augmentations(x)
+            x_np = self._apply_augmentations(x_np)
         else:
             # Still apply smoothing to validation (match official implementation!)
             smooth_data = self.aug_config.get('smooth_data', False) if self.aug_config else False
             if smooth_data:
                 smooth_kernel_std = self.aug_config.get('smooth_kernel_std', 2)
                 smooth_kernel_size = self.aug_config.get('smooth_kernel_size', 100)
-                x_tensor = torch.from_numpy(x).unsqueeze(0)
+                x_tensor = torch.from_numpy(x_np).unsqueeze(0)
                 x_tensor = gauss_smooth(x_tensor, 'cpu', smooth_kernel_std, smooth_kernel_size)
-                x = x_tensor.squeeze(0).numpy()
+                x_np = x_tensor.squeeze(0).numpy()
 
         # Normalize
         if self.mean is not None and self.std is not None:
-            x = (x - self.mean) / (self.std + 1e-6)
+            x_np = (x_np - self.mean) / (self.std + 1e-6)
 
         # Remove padding from phoneme targets
-        y_len = (y != 0).sum()  # Assuming 0 is padding
+        y_len = (y_np != 0).sum()  # Assuming 0 is padding
         if y_len == 0:  # Handle edge case
             y_len = 1
-            y = np.array([0], dtype=np.int64)
+            y_np = np.array([0], dtype=np.int64)
         else:
-            y = y[:y_len]
+            y_np = y_np[:y_len]
 
-        return torch.from_numpy(x), torch.from_numpy(y), day_idx, sess_name, tk
+        return torch.from_numpy(x_np), torch.from_numpy(y_np), day_idx, sess_name, tk, sentence
 
     def _apply_augmentations(self, x):
         """Apply data augmentations to neural data - MATCH OFFICIAL ORDER"""
@@ -147,7 +149,7 @@ def collate_phoneme_batch(batch):
     Collate function for phoneme dataset.
     Returns padded tensors suitable for CTC loss.
     """
-    xs, ys, day_idxs, sess_names, trial_keys = zip(*batch)
+    xs, ys, day_idxs, sess_names, trial_keys, sentences = zip(*batch)
 
     # Pad neural features
     T_max = max(x.shape[0] for x in xs)
@@ -170,4 +172,4 @@ def collate_phoneme_batch(batch):
 
     day_idxs = torch.tensor(day_idxs, dtype=torch.long)
 
-    return x_pad, y_pad, x_lens, y_lens, day_idxs, sess_names, trial_keys
+    return x_pad, y_pad, x_lens, y_lens, day_idxs, sess_names, trial_keys, sentences

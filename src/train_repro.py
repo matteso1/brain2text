@@ -127,7 +127,7 @@ def create_cosine_lr_scheduler(optimizer, config, num_batches=None):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-def train_repro(config_path, num_batches=None):
+def train_repro(config_path, num_batches=None, resume_from_checkpoint=None):
     print("--- Starting Clean Reproduction of Official Training ---")
 
     # 1. Load Config
@@ -137,6 +137,11 @@ def train_repro(config_path, num_batches=None):
     set_seed(config.get('seed', 10))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
+
+    # Ensure output and checkpoint directories exist
+    os.makedirs(config['output_dir'], exist_ok=True)
+    if 'checkpoint_dir' in config:
+        os.makedirs(config['checkpoint_dir'], exist_ok=True)
 
     # 2. Data Loading
     session_to_day, sessions = get_session_mapping(config_path)
@@ -150,7 +155,12 @@ def train_repro(config_path, num_batches=None):
     )
     train_dl = DataLoader(
         train_ds, batch_size=dataset_cfg['batch_size'], shuffle=True,
+        # TUNED FOR STABILITY: For a long overnight run on Windows, keeping the
+        # data loader worker processes alive is critical. This prevents the OS
+        # from wasting time creating/destroying them for every batch, which is a
+        # major cause of inconsistent training speed ("up and down a lot").
         num_workers=dataset_cfg.get('num_dataloader_workers', 4),
+        persistent_workers=True,
         collate_fn=collate_phoneme_batch, pin_memory=True
     )
     val_dl = DataLoader(
@@ -196,16 +206,36 @@ def train_repro(config_path, num_batches=None):
 
     # 6. Training Loop
     step = 0
+
+    # --- RESUME FROM CHECKPOINT LOGIC ---
+    if resume_from_checkpoint:
+        print(f"Resuming training from checkpoint: {resume_from_checkpoint}")
+        checkpoint = torch.load(resume_from_checkpoint, map_location=device)
+
+        # CRITICAL FIX: Only load the state dicts and step. The 'config' object from the
+        # checkpoint is NOT used, ensuring that the current run's config (from the yaml)
+        # is the single source of truth for paths and hyperparameters. This prevents
+        # "config pollution" from old runs.
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        step = checkpoint['step']
+        print(f"Resumed from step {step}. Last validation PER: {checkpoint.get('val_per', 'N/A')}")
+    # ------------------------------------
+
     total_batches = config['num_training_batches'] if num_batches is None else num_batches
-    pbar = tqdm(total=total_batches, desc="Training")
+    pbar = tqdm(initial=step, total=total_batches, desc="Training")
     train_iter = iter(train_dl)
+
+    # BUG FIX: Removed faulty pbar.update(step). The 'initial=step' argument to tqdm
+    # is the correct and only line needed to start the progress bar correctly.
 
     while step < total_batches:
         try:
-            x, y, x_lens, y_lens, day_idxs, _, _ = next(train_iter)
+            x, y, x_lens, y_lens, day_idxs, _, _, _ = next(train_iter)
         except StopIteration:
             train_iter = iter(train_dl)
-            x, y, x_lens, y_lens, day_idxs, _, _ = next(train_iter)
+            x, y, x_lens, y_lens, day_idxs, _, _, _ = next(train_iter)
 
         model.train()
         
@@ -273,7 +303,7 @@ def train_repro(config_path, num_batches=None):
             model.eval()
             val_pers = []
             with torch.no_grad():
-                for vx, vy, vx_lens, vy_lens, vday_idxs, _, _ in tqdm(val_dl, desc="Validating", leave=False):
+                for vx, vy, vx_lens, vy_lens, vday_idxs, _, _, _ in tqdm(val_dl, desc="Validating", leave=False):
                     vx = vx.to(device)
                     v_logits = model(vx, vday_idxs.to(device))
                     decoded = greedy_ctc_decode(v_logits)
@@ -283,9 +313,33 @@ def train_repro(config_path, num_batches=None):
             print(f"\n--- Validation at Step {step}: Avg PER = {avg_per*100:.2f}% ---")
             pbar.set_postfix({'loss': f"{loss.item():.3f}", 'grad': f"{grad_norm.item():.2f}", 'lr': f"{scheduler.get_last_lr()[0]:.6f}", 'val_per': f"{avg_per:.3f}"})
 
+            # Save a checkpoint
+            checkpoint_dir = config.get('checkpoint_dir', os.path.join(config['output_dir'], 'checkpoints'))
+            checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_step_{step}.pt')
+            torch.save({
+                'step': step,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'val_per': avg_per,
+                'config': config
+            }, checkpoint_path)
+            print(f"Checkpoint saved to {checkpoint_path}")
+
 
     pbar.close()
     print("--- Clean Reproduction Training Finished ---")
+
+    # Save the final model
+    final_model_path = os.path.join(config['output_dir'], 'final_model.pt')
+    torch.save({
+        'step': step,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'config': config
+    }, final_model_path)
+    print(f"Final model saved to {final_model_path}")
 
 
 if __name__ == "__main__":
@@ -293,5 +347,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/rnn_official_exact.yaml')
     parser.add_argument('--num-batches', type=int, default=None, help='Override number of training batches from config')
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint to resume training from.')
     args = parser.parse_args()
-    train_repro(args.config, args.num_batches)
+    train_repro(args.config, args.num_batches, args.resume_from_checkpoint)
