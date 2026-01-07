@@ -1,36 +1,36 @@
 # Brain-to-Text: Neural Navigators Kaggle Competition
 
-**Project Status (October 2025): ✅ WORKING BASELINE WITH WER METRIC**
+**Project Status (October 2025): WORKING BASELINE WITH WER METRIC**
 
 This repository contains the code for the Neural Navigators team's entry into the **Brain-to-Text '25 Kaggle Competition**. Our goal is to build a state-of-the-art neural decoder that translates brain signals into text, with the ultimate aim of restoring communication to individuals with paralysis.
 
 ---
 
-## 🚀 Breakthrough Achieved: Complete Pipeline Working!
+##  Breakthrough Achieved: Complete Pipeline Working!
 
 After intensive debugging, we have successfully implemented the complete NEJM baseline pipeline from brain signals to word predictions. Our infrastructure now includes:
 
-**✅ Complete End-to-End Pipeline:**
+** Complete End-to-End Pipeline:**
 - **Brain Signals → Phonemes**: 5-layer GRU model with CTC loss
 - **Phonemes → Words**: FST-based language model with Redis communication
 - **Full Evaluation**: Word Error Rate (WER) calculation on validation set
 
-**📊 Latest Results (Validation Set - 1,426 samples):**
-- **Word Error Rate (WER): 40.32%** 🎯 **(This is the actual competition metric!)**
+**Latest Results (Validation Set - 1,426 samples):**
+- **Word Error Rate (WER): 40.32%**  **(This is the actual competition metric!)**
 - **Phoneme Error Rate (PER): ~19%** (estimated from training)
 - **Language Model**: 1-gram FST model (room for improvement with 3-gram)
 
-**🔧 Infrastructure Status:**
-- ✅ Stable model training (`src/train_repro.py`)
-- ✅ Working language model server with Redis
-- ✅ Complete evaluation pipeline
-- ✅ Cross-platform compatibility (Windows + WSL)
+** Infrastructure Status:**
+- Stable model training (`src/train_repro.py`)
+- Working language model server with Redis
+- Complete evaluation pipeline
+- Cross-platform compatibility (Windows + WSL)
 
 This gives us a **solid, reproducible baseline** to build upon!
 
 ---
 
-## 🧠 How It Works: The GRU Baseline
+##  How It Works: The GRU Baseline
 
 Our current approach is a faithful implementation of the successful Stanford baseline.
 
@@ -49,13 +49,13 @@ Our current approach is a faithful implementation of the successful Stanford bas
 
 Building the complete brain-to-text pipeline taught us critical lessons about neural decoding systems:
 
-**🔧 Infrastructure Challenges Solved:**
+** Infrastructure Challenges Solved:**
 1.  **Cross-Platform Compatibility**: Windows symlinks don't work in WSL. We recreated all symlinks (`kaldi`, `utils`, `decoder`, etc.) pointing to `../../core/` directories.
 2.  **Data Type Consistency**: PyTorch models trained with BFloat16 require consistent data types throughout the pipeline. Fixed gauss smoothing and model input conversion.
 3.  **Redis Communication**: The language model server and evaluation script communicate via Redis streams. Proper setup requires daemonized Redis and background LM server.
 4.  **Python Environment Isolation**: The LM compilation requires Python 3.9 with specific PyTorch 1.13.1, while evaluation works with PyTorch 2.x.
 
-**🧠 Model Integration Insights:**
+**Model Integration Insights:**
 1.  **Complete Pipeline is Essential**: WER (40.32%) is very different from PER (~19%). The language model dramatically affects final performance.
 2.  **1-gram vs 3-gram Impact**: Our 1-gram baseline gives reasonable results (40% WER), but 3-gram models should improve this significantly.
 3.  **End-to-End Validation**: We now have a complete, reproducible pipeline that any team member can run to get baseline results.
@@ -68,7 +68,7 @@ Building the complete brain-to-text pipeline taught us critical lessons about ne
 
 ---
 
-## 🏆 Competition Game Plan: Path to the Top 3
+## Competition Game Plan: Path to the Top 3
 
 Now that we have a stable baseline, we can execute our plan to climb the leaderboard. This plan is informed by the [Brain-to-Text Benchmark '24 paper](https://arxiv.org/html/2412.17227v1), which summarizes the winning strategies.
 
@@ -91,7 +91,7 @@ Now that we have a stable baseline, we can execute our plan to climb the leaderb
 
 ---
 
-## 💻 How to Use This Repository
+## How to Use This Repository
 
 ### 1. Environment Setup
 ```powershell
@@ -162,16 +162,16 @@ python src/train_repro.py --config configs/rnn_official_exact.yaml
 -   `nejm_repo/`: A clone of the original NEJM implementation for reference.
 -   `data/`: (Not in git) This is where the HDF5 data files should be located.
 
-## 📈 Current Status Summary
+## Current Status Summary
 
-**✅ ACHIEVED:**
+**ACHIEVED:**
 - Complete end-to-end pipeline (brain signals → phonemes → words → WER)
 - **Baseline WER: 40.32%** on validation set (1,426 samples)
 - Stable model training with 19% PER
 - Working cross-platform setup (Windows + WSL)
 - Reproducible evaluation process
 
-**🚀 IMMEDIATE NEXT STEPS:**
+**IMMEDIATE NEXT STEPS:**
 1. **Test 3-gram language model** (should significantly improve WER)
 2. **Implement Layer Normalization** (Phase 2 - proven to help)
 3. **Model ensembling + LLM rescoring** (Phase 3 - top teams strategy)
@@ -179,7 +179,7 @@ python src/train_repro.py --config configs/rnn_official_exact.yaml
 **🏁 REPRODUCTION:**
 Any team member can now reproduce these results by following the setup instructions above. The pipeline is stable and documented.
 
-## 📋 Quick Start for Team Members
+## Quick Start for Team Members
 
 ```bash
 # 1. Setup Windows environment
